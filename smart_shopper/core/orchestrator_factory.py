@@ -23,6 +23,7 @@ def build_orchestrator(
     gemini_api_key: str,
     hf_token: str,
     serpapi_key: str,
+    serper_api_key: str = "",
     serpapi_gl: str = "br",
     serpapi_hl: str = "pt",
 ) -> OrchestratorBuildResult:
@@ -33,6 +34,7 @@ def build_orchestrator(
     )
     search_provider, live_mode = build_search_provider(
         serpapi_key=serpapi_key,
+        serper_api_key=serper_api_key,
         gl=serpapi_gl,
         hl=serpapi_hl,
     )

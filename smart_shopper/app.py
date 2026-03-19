@@ -150,6 +150,7 @@ def main() -> None:
 
     gemini_key = _safe_get_secret("GEMINI_API_KEY")
     serpapi_key = _safe_get_secret("SERPAPI_KEY")
+    serper_key = _safe_get_secret("SERPER_API_KEY")
     hf_token = _safe_get_secret("HF_TOKEN")
     groq_key = _safe_get_secret("GROQ_API_KEY")
 
@@ -187,6 +188,7 @@ def main() -> None:
                 gemini_api_key=gemini_key,
                 hf_token=hf_token,
                 serpapi_key=serpapi_key,
+                serper_api_key=serper_key,
                 serpapi_gl=_safe_get_secret("SERPAPI_GL", "br"),
                 serpapi_hl=_safe_get_secret("SERPAPI_HL", "pt"),
             )
@@ -555,6 +557,7 @@ def main() -> None:
                 "vision_gemini_present": st.session_state.get("vision_gemini_present"),
                 "vision_hf_present": st.session_state.get("vision_hf_present"),
                 "serpapi_key_present": bool(serpapi_key and serpapi_key.strip()),
+                "serper_key_present": bool(serper_key and serper_key.strip()),
                 "serpapi_module_available": st.session_state.get("serpapi_module_available"),
                 "live_mode": st.session_state.get("live_mode"),
                 "vision_image_present": st.session_state.get("vision_image_present"),
