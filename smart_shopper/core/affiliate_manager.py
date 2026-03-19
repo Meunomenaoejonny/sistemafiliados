@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import hashlib
@@ -11,14 +11,71 @@ from typing import Optional
 import requests
 
 
+# ─── Lojas suportadas ────────────────────────────────────────────────────────
+
+ALL_STORES: list[dict] = [
+    {"key": "aliexpress",    "label": "AliExpress",    "icon": "🛒", "url_tpl": "https://pt.aliexpress.com/wholesale?SearchText={q}"},
+    {"key": "mercadolivre",  "label": "Mercado Livre", "icon": "🛍️",  "url_tpl": "https://lista.mercadolivre.com.br/{q}"},
+    {"key": "amazon",        "label": "Amazon",        "icon": "📦", "url_tpl": "https://www.amazon.com.br/s?k={q}"},
+    {"key": "shopee",        "label": "Shopee",        "icon": "🧡", "url_tpl": "https://shopee.com.br/search?keyword={q}"},
+    {"key": "magalu",        "label": "Magalu",        "icon": "💛", "url_tpl": "https://www.magazineluiza.com.br/busca/{q}/"},
+    {"key": "shein",         "label": "Shein",         "icon": "👗", "url_tpl": "https://www.shein.com.br/pdsearch/{q}/"},
+    {"key": "kabum",         "label": "KaBuM!",        "icon": "🖥️",  "url_tpl": "https://www.kabum.com.br/busca/{q}"},
+    {"key": "americanas",    "label": "Americanas",    "icon": "🔴", "url_tpl": "https://www.americanas.com.br/busca/{q}"},
+    {"key": "casasbahia",    "label": "Casas Bahia",   "icon": "🏠", "url_tpl": "https://www.casasbahia.com.br/busca/{q}"},
+]
+
+def store_search_url(store_key: str, query: str) -> str:
+    import urllib.parse
+    enc = urllib.parse.quote(query.strip())
+    for s in ALL_STORES:
+        if s["key"] == store_key:
+            return s["url_tpl"].format(q=enc)
+    return ""
+
+
+# ─── Configuração de afiliados ────────────────────────────────────────────────
+
 @dataclass(frozen=True)
 class AffiliateConfig:
-    amazon_tag: str = ""
-    aliexpress_admitad_campaign_code: str = ""
+    # AliExpress
     aliexpress_app_key: str = ""
     aliexpress_app_secret: str = ""
     aliexpress_tracking_id: str = ""
+    aliexpress_admitad_campaign_code: str = ""
+    # Amazon
+    amazon_tag: str = ""
+    # Mercado Livre (ML Affiliates / mlb)
+    mercadolivre_affiliate_id: str = ""
+    # Shopee
+    shopee_affiliate_id: str = ""
+    # Magalu (Lomadee ou direct)
+    magalu_affiliate_id: str = ""
+    # Shein (SheIn Affiliate Program)
+    shein_affiliate_id: str = ""
 
+
+def has_affiliate(cfg: AffiliateConfig, store_key: str) -> bool:
+    """Retorna True se a loja tem chave de afiliado configurada."""
+    if store_key == "aliexpress":
+        return bool(
+            (cfg.aliexpress_app_key and cfg.aliexpress_app_secret and cfg.aliexpress_tracking_id)
+            or cfg.aliexpress_admitad_campaign_code
+        )
+    if store_key == "amazon":
+        return bool(cfg.amazon_tag)
+    if store_key == "mercadolivre":
+        return bool(cfg.mercadolivre_affiliate_id)
+    if store_key == "shopee":
+        return bool(cfg.shopee_affiliate_id)
+    if store_key == "magalu":
+        return bool(cfg.magalu_affiliate_id)
+    if store_key == "shein":
+        return bool(cfg.shein_affiliate_id)
+    return False
+
+
+# ─── AliExpress deeplink ──────────────────────────────────────────────────────
 
 def _aliexpress_official_deeplink(
     target_url: str,
@@ -29,12 +86,6 @@ def _aliexpress_official_deeplink(
     promotion_link_type: int = 0,
     timeout_s: float = 12.0,
 ) -> Optional[str]:
-    """
-    Gera deeplink de afiliado via AliExpress Open Platform (oficial).
-    Método: aliexpress.affiliate.link.generate
-
-    Retorna a URL de afiliado (promotion_link) ou None em falha.
-    """
     if not target_url.strip() or not app_key.strip() or not app_secret.strip() or not tracking_id.strip():
         return None
 
@@ -52,7 +103,6 @@ def _aliexpress_official_deeplink(
         "promotion_link_type": str(int(promotion_link_type)),
     }
 
-    # Assinatura: HMAC-SHA256(secret, concat(keys+values ordenados)) em hex upper
     pieces: list[str] = []
     for k in sorted(params.keys()):
         pieces.append(k)
@@ -68,8 +118,6 @@ def _aliexpress_official_deeplink(
     except Exception:  # noqa: BLE001
         return None
 
-    # Estruturas variam: tentamos os caminhos mais comuns.
-    # Ex: {"aliexpress_affiliate_link_generate_response": {"resp_result": {"result": {"promotion_links": [...]}}}}
     root = None
     if isinstance(data, dict):
         for k in ("aliexpress_affiliate_link_generate_response", "aliexpress_ali_affiliate_link_generate_response"):
@@ -95,26 +143,20 @@ def _aliexpress_official_deeplink(
     if isinstance(links, list) and links:
         first = links[0]
         if isinstance(first, dict):
-            for field in ("promotion_link", "promotionLink", "url", "link"):
-                v = first.get(field)
+            for f in ("promotion_link", "promotionLink", "url", "link"):
+                v = first.get(f)
                 if isinstance(v, str) and v.strip():
                     return v.strip()
     return None
 
 
-def _add_utm_tracking(url: str, store_name: str) -> str:
-    """
-    Adiciona UTMs para ajudar no tracking/attribution.
+# ─── UTM helpers ─────────────────────────────────────────────────────────────
 
-    Não substitui o tracking nativo dos programas de afiliados, mas melhora a medição
-    quando os provedores suportam UTM ou quando você usa redirect/analytics próprios.
-    """
+def _add_utm_tracking(url: str, store_name: str) -> str:
     url = (url or "").strip()
     if not url:
         return url
-
     store_norm = (store_name or "").strip().lower() or "unknown_store"
-
     parts = urlparse(url)
     q = dict(parse_qsl(parts.query, keep_blank_values=True))
     q.setdefault("utm_source", "smart_shopper")
@@ -132,33 +174,18 @@ def _append_query_param(url: str, key: str, value: str) -> str:
     return urlunparse((parts.scheme, parts.netloc, parts.path, parts.params, new_query, parts.fragment))
 
 
+# ─── Conversão de link ────────────────────────────────────────────────────────
+
 def to_affiliate_link(original_url: str, store_name: str, cfg: AffiliateConfig) -> str:
-    """
-    Converte um link "normal" em link de afiliado.
-
-    Preencha seus IDs no Streamlit Secrets e passe para `AffiliateConfig`.
-
-    Exemplos:
-    - Amazon: adiciona `tag=<AMAZON_TAG>` como query param.
-    - AliExpress (Admitad): estrutura preparada para deep link por campaign code.
-      Ajuste o formato conforme seu provedor/conta (Admitad, AWIN, Impact, etc).
-    """
     url = (original_url or "").strip()
     store = (store_name or "").strip().lower()
 
     if not url:
         return original_url
 
-    # Primeiro adicionamos UTMs (não quebra os links e ajuda na atribuição).
     url = _add_utm_tracking(url, store_name=store_name)
 
-    if "amazon" in store:
-        if cfg.amazon_tag:
-            return _append_query_param(url, "tag", cfg.amazon_tag)
-        return url
-
     if "aliexpress" in store:
-        # 1) Oficial (AliExpress Affiliate API)
         if cfg.aliexpress_app_key and cfg.aliexpress_app_secret and cfg.aliexpress_tracking_id:
             deeplink = _aliexpress_official_deeplink(
                 url,
@@ -168,19 +195,35 @@ def to_affiliate_link(original_url: str, store_name: str, cfg: AffiliateConfig) 
             )
             if deeplink:
                 return deeplink
-
-        # 2) Fallback: Admitad (se existir)
         if cfg.aliexpress_admitad_campaign_code:
-            # Exemplo de wrapper típico (pode variar por conta/integração):
-            # https://ad.admitad.com/g/<campaign_code>/?ulp=<URL_ENCODED>
-            # Aqui mantemos simples; você pode trocar por seu formato oficial.
             import urllib.parse
-
             ulp = urllib.parse.quote(url, safe="")
             return f"https://ad.admitad.com/g/{cfg.aliexpress_admitad_campaign_code}/?ulp={ulp}"
         return url
 
-    # Mercado Livre / Shopee / outras lojas:
-    # Deixe preparado para futura integração (ex: parâmetros ref, utm, deeplink networks).
-    return url
+    if "amazon" in store:
+        if cfg.amazon_tag:
+            return _append_query_param(url, "tag", cfg.amazon_tag)
+        return url
 
+    if "mercado livre" in store or "mercadolivre" in store:
+        if cfg.mercadolivre_affiliate_id:
+            return _append_query_param(url, "ref", cfg.mercadolivre_affiliate_id)
+        return url
+
+    if "shopee" in store:
+        if cfg.shopee_affiliate_id:
+            return _append_query_param(url, "af_id", cfg.shopee_affiliate_id)
+        return url
+
+    if "magalu" in store or "magazine" in store:
+        if cfg.magalu_affiliate_id:
+            return _append_query_param(url, "partner_id", cfg.magalu_affiliate_id)
+        return url
+
+    if "shein" in store:
+        if cfg.shein_affiliate_id:
+            return _append_query_param(url, "aff_id", cfg.shein_affiliate_id)
+        return url
+
+    return url

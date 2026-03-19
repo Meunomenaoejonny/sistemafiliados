@@ -172,30 +172,25 @@ class SearchEngine:
     def _search_free_fallback(self, query: str, max_results: int = 3) -> list[ProductOffer]:
         """
         Modo 100% gratuito (sem SerpApi).
-        Estimativa de preço via MarketIntelligence (catálogo de top vendidos BR 2025).
+        Retorna 1 oferta por loja (estimativa de preço) para todas as lojas suportadas.
         """
         import urllib.parse
         from core.market.price_estimator import estimate_brl_range, brl_label
+        from core.affiliate_manager import ALL_STORES
 
         low, high = estimate_brl_range(query)
         label = brl_label(low, high)
         enc_q = urllib.parse.quote(query.strip())
 
-        candidate_stores = [
-            ("AliExpress", f"https://pt.aliexpress.com/wholesale?SearchText={enc_q}"),
-            ("Amazon", f"https://www.amazon.com.br/s?k={enc_q}"),
-            ("Mercado Livre", f"https://lista.mercadolivre.com.br/{enc_q}"),
-            ("Shopee", f"https://shopee.com.br/search?keyword={enc_q}"),
-        ]
-
         offers: list[ProductOffer] = []
-        for store_name, original_link in candidate_stores[: max_results or 3]:
+        for store in ALL_STORES:
+            original_link = store["url_tpl"].format(q=enc_q)
             offers.append(
                 ProductOffer(
-                    title=f"{query.strip()} (busca por loja)",
+                    title=f"{query.strip()}",
                     price=None,
                     currency="BRL",
-                    store=store_name,
+                    store=store["label"],
                     thumbnail=None,
                     original_link=original_link,
                     is_live_price=False,

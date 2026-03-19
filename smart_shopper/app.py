@@ -15,7 +15,7 @@ if _app_dir not in sys.path:
 
 import streamlit as st
 
-from core.affiliate_manager import AffiliateConfig
+from core.affiliate_manager import AffiliateConfig, has_affiliate
 from core.orchestrator import OrchestratorError
 from core.analysis.product_analysis import build_product_analysis_result
 from core.orchestrator_factory import build_orchestrator
@@ -121,6 +121,7 @@ def main() -> None:
     st.session_state.setdefault("market_result", None)
     st.session_state.setdefault("learned_query_normalized", None)
     st.session_state.setdefault("refiner_input", None)
+    st.session_state.setdefault("platform_results", None)
 
     # Limpar cache e campo: zera caches; o campo é limpo no próximo rerun (antes do widget ser criado).
     if clear_cache_clicked:
@@ -136,6 +137,7 @@ def main() -> None:
         st.session_state["learned_query_normalized"] = None
         st.session_state["refiner_input"] = None
         st.session_state["last_technical_error"] = None
+        st.session_state["platform_results"] = None
         st.session_state["_clear_cache_pending_input"] = True
         st.rerun()
 
@@ -152,20 +154,17 @@ def main() -> None:
     st.session_state["vision_gemini_present"] = bool(gemini_key and gemini_key.strip())
     st.session_state["vision_hf_present"] = bool(hf_token and hf_token.strip())
 
-    # Retrocompatível: se a Cloud estiver com cache parcial, evita quebrar em kwargs novos.
-    try:
-        affiliate_cfg = AffiliateConfig(
-            amazon_tag=_safe_get_secret("AMAZON_TAG"),
-            aliexpress_admitad_campaign_code=_safe_get_secret("ALIEXPRESS_ADMITAD_CAMPAIGN_CODE"),
-            aliexpress_app_key=_safe_get_secret("ALIEXPRESS_APP_KEY"),
-            aliexpress_app_secret=_safe_get_secret("ALIEXPRESS_APP_SECRET"),
-            aliexpress_tracking_id=_safe_get_secret("ALIEXPRESS_TRACKING_ID"),
-        )
-    except TypeError:
-        affiliate_cfg = AffiliateConfig(
-            amazon_tag=_safe_get_secret("AMAZON_TAG"),
-            aliexpress_admitad_campaign_code=_safe_get_secret("ALIEXPRESS_ADMITAD_CAMPAIGN_CODE"),
-        )
+    affiliate_cfg = AffiliateConfig(
+        aliexpress_app_key=_safe_get_secret("ALIEXPRESS_APP_KEY"),
+        aliexpress_app_secret=_safe_get_secret("ALIEXPRESS_APP_SECRET"),
+        aliexpress_tracking_id=_safe_get_secret("ALIEXPRESS_TRACKING_ID"),
+        aliexpress_admitad_campaign_code=_safe_get_secret("ALIEXPRESS_ADMITAD_CAMPAIGN_CODE"),
+        amazon_tag=_safe_get_secret("AMAZON_TAG"),
+        mercadolivre_affiliate_id=_safe_get_secret("MERCADOLIVRE_AFFILIATE_ID"),
+        shopee_affiliate_id=_safe_get_secret("SHOPEE_AFFILIATE_ID"),
+        magalu_affiliate_id=_safe_get_secret("MAGALU_AFFILIATE_ID"),
+        shein_affiliate_id=_safe_get_secret("SHEIN_AFFILIATE_ID"),
+    )
 
     orchestrator = None
     vision_backend: Optional[str] = None
@@ -306,10 +305,13 @@ def main() -> None:
 
                     if search_cache_key in st.session_state["search_cache"]:
                         cards = st.session_state["search_cache"][search_cache_key]
+                        platform_results = st.session_state.get("platform_results") or []
                     else:
-                        # Busca mais profunda para achar melhor custo-benefício.
-                        cards = orchestrator.search_offers(product_query, max_results=12)
+                        # Busca profunda por plataforma (melhor oferta de cada loja).
+                        platform_results = orchestrator.search_by_platform(product_query, max_results=20)
+                        cards = [pr.card for pr in platform_results]
                         st.session_state["search_cache"][search_cache_key] = cards
+                        st.session_state["platform_results"] = platform_results
 
                     # Tracking local (evento de submissão)
                     top_store = cards[0].store if cards else None
@@ -363,9 +365,11 @@ def main() -> None:
 
         # Aviso se falhou: garante que existe para renderizar
         cards = st.session_state.get("cards") or []
+        platform_results = st.session_state.get("platform_results") or []
         product_query = st.session_state.get("last_product_query")
     else:
         cards = st.session_state.get("cards") or []
+        platform_results = st.session_state.get("platform_results") or []
         product_query = st.session_state.get("last_product_query")
 
     if not search_failed and product_query:
@@ -373,7 +377,7 @@ def main() -> None:
         is_top_seller = market_result and market_result.is_top_seller
         top_product = market_result.product if market_result else None
 
-        # Badge de top vendido
+        # Badge top vendido
         if is_top_seller and top_product:
             rank_label = f"#{top_product.rank}" if top_product.rank else ""
             st.success(
@@ -382,20 +386,23 @@ def main() -> None:
             )
 
         st.success(f"Produto identificado/buscado: **{product_query}**")
-        st.subheader("🏆 Melhor oferta (custo-benefício)")
 
-        # Cards já vêm ordenados por custo-benefício (value_score).
-        best_idx = 0
-        if cards:
-            best = cards[0]
+        # ── Melhor oferta global (destaque) ──────────────────────────────────
+        if platform_results:
+            best_pr = platform_results[0]
+            best = best_pr.card
+            aff_badge = "🤝 **Afiliado ativo**" if best_pr.has_affiliate else "🔗 Sem afiliado cadastrado"
+            st.subheader(f"⭐ Melhor custo-benefício: {best_pr.store_icon} {best_pr.store_label}")
             with st.container(border=True):
                 cols = st.columns([1, 2], vertical_alignment="top")
                 with cols[0]:
                     if best.thumbnail:
                         st.image(best.thumbnail, use_container_width=True)
+                    else:
+                        st.markdown(f"<h1 style='text-align:center'>{best_pr.store_icon}</h1>", unsafe_allow_html=True)
                 with cols[1]:
+                    st.caption(aff_badge)
                     st.subheader(best.title)
-                    st.caption(best.store)
                     if best.is_live_price:
                         price_value = _format_price(best.price, best.currency) or best.price_label
                         if price_value:
@@ -405,99 +412,80 @@ def main() -> None:
                         if price_value:
                             st.metric("Preço estimado", price_value)
                         st.caption("Sem preço ao vivo (modo gratuito).")
-
                     meta = best.metadata or {}
                     rating = meta.get("rating")
                     reviews_count = meta.get("reviews_count")
                     if rating is not None:
                         try:
-                            r = float(rating)
                             rc = int(reviews_count) if reviews_count is not None else 0
-                            st.caption(f"Avaliação: {r:.1f}/5 • {rc} reviews")
+                            st.caption(f"Avaliação: {float(rating):.1f}/5 • {rc} avaliações")
                         except Exception:
                             pass
                     why = meta.get("why_this")
                     if isinstance(why, str) and why.strip():
                         st.caption(why.strip())
+                    btn_label = (
+                        f"Ver oferta no {best_pr.store_label} (Afiliado)" if best_pr.has_affiliate
+                        else f"Buscar no {best_pr.store_label}"
+                    )
+                    st.link_button(btn_label, best.affiliate_link, use_container_width=True, type="primary")
 
-                    st.link_button("Ver oferta recomendada (Afiliado)", best.affiliate_link, use_container_width=True)
+        # ── Resultado por plataforma ──────────────────────────────────────────
+        st.divider()
+        st.subheader("📊 Resultados por plataforma")
 
-        st.subheader("Outras boas opções")
+        if not platform_results:
+            st.info("Nenhuma oferta encontrada. Tente outra pesquisa.")
+        else:
+            cols_per_row = 3
+            for i in range(0, len(platform_results), cols_per_row):
+                row = platform_results[i: i + cols_per_row]
+                row_cols = st.columns(len(row), vertical_alignment="top")
+                for col, pr in zip(row_cols, row):
+                    card = pr.card
+                    meta = card.metadata or {}
+                    with col:
+                        with st.container(border=True, key=f"plat_{pr.store_key}"):
+                            # Cabeçalho da plataforma
+                            if pr.has_affiliate:
+                                st.markdown(f"**{pr.store_icon} {pr.store_label}** 🤝")
+                            else:
+                                st.markdown(f"**{pr.store_icon} {pr.store_label}**")
 
-        # Grid 3-up (uma linha por vez)
-        for i in range(0, len(cards), 3):
-            row_cols = st.columns(3, vertical_alignment="top")
-            for j, col in enumerate(row_cols):
-                idx = i + j
-                if idx >= len(cards):
-                    break
+                            if card.thumbnail:
+                                st.image(card.thumbnail, use_container_width=True)
 
-                card = cards[idx]
-                with col:
-                    with st.container(border=True, key=f"card_{idx}"):
-                        if idx == best_idx:
-                            st.success("⭐ Melhor custo-benefício")
-                        if card.thumbnail:
-                            st.image(card.thumbnail, use_container_width=True)
-                        else:
-                            st.caption("Sem imagem")
+                            # Título (truncado)
+                            title_short = card.title if len(card.title) <= 60 else card.title[:57] + "…"
+                            st.caption(title_short)
 
-                        st.subheader(card.title)
-                        st.caption(card.store)
+                            # Preço
+                            if card.is_live_price:
+                                price_value = _format_price(card.price, card.currency) or card.price_label
+                                if price_value:
+                                    st.metric("Preço", price_value)
+                            else:
+                                price_value = _strip_estimativa_prefix(card.price_label) or card.price_label
+                                if price_value:
+                                    st.metric("Estimativa", price_value)
 
-                        # Badge top vendido por card
-                        if is_top_seller and top_product:
-                            st.caption(f"🏆 Top Vendido BR #{top_product.rank}")
+                            # Rating
+                            rating = meta.get("rating")
+                            if rating is not None:
+                                try:
+                                    rc = int(meta.get("reviews_count") or 0)
+                                    st.caption(f"⭐ {float(rating):.1f}/5 ({rc} avaliações)")
+                                except Exception:
+                                    pass
 
-                        if card.is_live_price:
-                            price_value = _format_price(card.price, card.currency) or card.price_label
-                            if price_value:
-                                st.metric("Preço", price_value)
-                        else:
-                            price_value = _strip_estimativa_prefix(card.price_label) or card.price_label
-                            if price_value:
-                                st.metric("Preço estimado", price_value)
-                            st.caption("Sem preço ao vivo (modo gratuito).")
-
-                        # Mostrar sinais de qualidade quando existirem (para custo-benefício)
-                        meta = card.metadata or {}
-                        rating = meta.get("rating")
-                        reviews_count = meta.get("reviews_count")
-                        if rating is not None:
-                            try:
-                                r = float(rating)
-                                rc = int(reviews_count) if reviews_count is not None else 0
-                                st.caption(f"Avaliação: {r:.1f}/5 • {rc} reviews")
-                            except Exception:
-                                pass
-
-                        why = meta.get("why_this")
-                        if isinstance(why, str) and why.strip():
-                            st.caption(why.strip())
-
-                        link_label = "Ver oferta (Afiliado)" if card.is_live_price else "Abrir busca"
-                        st.link_button(
-                            link_label,
-                            card.affiliate_link,
-                            use_container_width=True,
-                        )
-
-                        if st.button(
-                            "Registrar visita",
-                            key=f"visit_{idx}_{card.store}",
-                            use_container_width=True,
-                        ):
-                            st.session_state["events"].append(
-                                {
-                                    "type": "card_visit",
-                                    "store": card.store,
-                                    "title": card.title,
-                                    "ts": time.time(),
-                                }
+                            # Botão
+                            btn_txt = (
+                                f"Ver oferta (Afiliado)" if pr.has_affiliate
+                                else "Abrir busca"
                             )
-                            st.toast("Visita registrada (local).")
+                            st.link_button(btn_txt, card.affiliate_link, use_container_width=True)
 
-        # Análise explicável da pesquisa (por que esses cards)
+        # ── Análise explicável ────────────────────────────────────────────────
         try:
             analysis_mode = "live" if any(c.is_live_price for c in cards) else "free"
             analysis_cache_key = (analysis_mode, product_query or "")
@@ -506,7 +494,7 @@ def main() -> None:
             else:
                 analysis_res = build_product_analysis_result(
                     product_query or "",
-                    cards,
+                    cards[:3],
                     gemini_api_key=gemini_key or None,
                     groq_api_key=groq_key or None,
                     hf_token=hf_token or None,
