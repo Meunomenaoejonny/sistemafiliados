@@ -85,12 +85,18 @@ class SearchEngine:
             # Se as chaves/serpapi não estiverem instalados, caímos para o modo gratuito.
             return self._search_free_fallback(query, max_results=max_results)
 
+        # Busca "profunda": pedir mais resultados do que vamos exibir,
+        # para conseguir ranquear melhor custo-benefício.
+        desired = max(10, int(max_results or 3))
+        serp_num = min(50, max(desired * 3, 20))
+
         params = {
             "engine": "google_shopping",
             "q": query.strip(),
             "api_key": self._key,
             "gl": self._gl,
             "hl": self._hl,
+            "num": serp_num,
         }
 
         try:

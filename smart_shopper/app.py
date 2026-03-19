@@ -301,7 +301,8 @@ def main() -> None:
                     if search_cache_key in st.session_state["search_cache"]:
                         cards = st.session_state["search_cache"][search_cache_key]
                     else:
-                        cards = orchestrator.search_offers(product_query, max_results=3)
+                        # Busca mais profunda para achar melhor custo-benefício.
+                        cards = orchestrator.search_offers(product_query, max_results=12)
                         st.session_state["search_cache"][search_cache_key] = cards
 
                     # Tracking local (evento de submissão)
@@ -375,10 +376,47 @@ def main() -> None:
             )
 
         st.success(f"Produto identificado/buscado: **{product_query}**")
-        st.subheader("Melhores ofertas (custo-benefício em lojas confiáveis)")
+        st.subheader("🏆 Melhor oferta (custo-benefício)")
 
-        # Cards já vêm ordenados por custo-benefício (value_score). Guardamos o vencedor.
+        # Cards já vêm ordenados por custo-benefício (value_score).
         best_idx = 0
+        if cards:
+            best = cards[0]
+            with st.container(border=True):
+                cols = st.columns([1, 2], vertical_alignment="top")
+                with cols[0]:
+                    if best.thumbnail:
+                        st.image(best.thumbnail, use_container_width=True)
+                with cols[1]:
+                    st.subheader(best.title)
+                    st.caption(best.store)
+                    if best.is_live_price:
+                        price_value = _format_price(best.price, best.currency) or best.price_label
+                        if price_value:
+                            st.metric("Preço", price_value)
+                    else:
+                        price_value = _strip_estimativa_prefix(best.price_label) or best.price_label
+                        if price_value:
+                            st.metric("Preço estimado", price_value)
+                        st.caption("Sem preço ao vivo (modo gratuito).")
+
+                    meta = best.metadata or {}
+                    rating = meta.get("rating")
+                    reviews_count = meta.get("reviews_count")
+                    if rating is not None:
+                        try:
+                            r = float(rating)
+                            rc = int(reviews_count) if reviews_count is not None else 0
+                            st.caption(f"Avaliação: {r:.1f}/5 • {rc} reviews")
+                        except Exception:
+                            pass
+                    why = meta.get("why_this")
+                    if isinstance(why, str) and why.strip():
+                        st.caption(why.strip())
+
+                    st.link_button("Ver oferta recomendada (Afiliado)", best.affiliate_link, use_container_width=True)
+
+        st.subheader("Outras boas opções")
 
         # Grid 3-up (uma linha por vez)
         for i in range(0, len(cards), 3):
