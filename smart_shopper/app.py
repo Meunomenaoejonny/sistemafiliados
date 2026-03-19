@@ -375,7 +375,10 @@ def main() -> None:
             )
 
         st.success(f"Produto identificado/buscado: **{product_query}**")
-        st.subheader("Melhores ofertas (3 mais baratas em lojas confiáveis)")
+        st.subheader("Melhores ofertas (custo-benefício em lojas confiáveis)")
+
+        # Cards já vêm ordenados por custo-benefício (value_score). Guardamos o vencedor.
+        best_idx = 0
 
         # Grid 3-up (uma linha por vez)
         for i in range(0, len(cards), 3):
@@ -388,6 +391,8 @@ def main() -> None:
                 card = cards[idx]
                 with col:
                     with st.container(border=True, key=f"card_{idx}"):
+                        if idx == best_idx:
+                            st.success("⭐ Melhor custo-benefício")
                         if card.thumbnail:
                             st.image(card.thumbnail, use_container_width=True)
                         else:
@@ -409,6 +414,22 @@ def main() -> None:
                             if price_value:
                                 st.metric("Preço estimado", price_value)
                             st.caption("Sem preço ao vivo (modo gratuito).")
+
+                        # Mostrar sinais de qualidade quando existirem (para custo-benefício)
+                        meta = card.metadata or {}
+                        rating = meta.get("rating")
+                        reviews_count = meta.get("reviews_count")
+                        if rating is not None:
+                            try:
+                                r = float(rating)
+                                rc = int(reviews_count) if reviews_count is not None else 0
+                                st.caption(f"Avaliação: {r:.1f}/5 • {rc} reviews")
+                            except Exception:
+                                pass
+
+                        why = meta.get("why_this")
+                        if isinstance(why, str) and why.strip():
+                            st.caption(why.strip())
 
                         link_label = "Ver oferta (Afiliado)" if card.is_live_price else "Abrir busca"
                         st.link_button(

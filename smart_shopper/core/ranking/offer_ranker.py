@@ -34,11 +34,12 @@ def _quality_score(rating: Optional[float], reviews_count: Optional[int]) -> flo
         reviews_norm = 0.0
     else:
         # log-scale to avoid domination by huge review counts
-        reviews_norm = 1.0 - math.exp(-math.log10(reviews_count + 1) / 3.0)
+        # 0 (poucas reviews) -> 1 (muitas reviews)
+        reviews_norm = 1.0 - math.exp(-math.log10(reviews_count + 1) / 2.8)
         reviews_norm = max(0.0, min(1.0, reviews_norm))
 
     # Weighted mix (tunable)
-    return 0.7 * rating_norm + 0.3 * reviews_norm
+    return 0.75 * rating_norm + 0.25 * reviews_norm
 
 
 def rank_offers(offers: list[ProductOffer]) -> list[RankedOffer]:
@@ -61,17 +62,20 @@ def rank_offers(offers: list[ProductOffer]) -> list[RankedOffer]:
         ps = _price_score(o.price, min_price=min_price, max_price=max_price)
         qs = _quality_score(o.rating, o.reviews_count)
 
-        # Se a oferta não tem preço ao vivo, tratamos como score baixo/dúbio.
+        # Se a oferta não tem preço ao vivo, ranking majoritariamente por preço (estimativa).
         if not o.is_live_price:
-            value_score = 0.15 * ps + 0.85 * qs
+            value_score = ps
             why = "Oferta em modo gratuito (estimativa) e possível variação de preços."
             ranked.append(RankedOffer(o, value_score=value_score, why_this=why, potential_savings_label=None))
             continue
 
-        # Pesos (ajuste fino depois com dados reais)
-        w_price = 0.65
-        w_quality = 0.35
-        value_score = w_price * ps + w_quality * qs
+        # Pesos custo-benefício:
+        # - preço ainda importa mais, mas qualidade (rating + reviews) pode virar o jogo.
+        # - se não houver rating, cai automaticamente para "preço".
+        if qs <= 0.0:
+            value_score = ps
+        else:
+            value_score = 0.58 * ps + 0.42 * qs
 
         # Economia potencial comparativa
         savings_label: Optional[str] = None
@@ -81,10 +85,13 @@ def rank_offers(offers: list[ProductOffer]) -> list[RankedOffer]:
                 # sem formatação locale pesada
                 savings_label = f"Possível economia vs média: R$ {diff:,.0f}".replace(",", ".")
 
-        rating_part = (
-            f"rating {o.rating:.1f}/5" if o.rating is not None else "sem rating confiável"
-        )
-        why_this = f"Preço competitivo (score {ps:.2f}) e qualidade: {rating_part}."
+        if o.rating is not None:
+            rc = o.reviews_count or 0
+            rating_part = f"{o.rating:.1f}/5 ({rc} reviews)"
+        else:
+            rating_part = "sem rating"
+
+        why_this = f"Custo-benefício: preço (score {ps:.2f}) + qualidade ({rating_part})."
         if savings_label:
             why_this = f"{why_this} {savings_label}"
 
