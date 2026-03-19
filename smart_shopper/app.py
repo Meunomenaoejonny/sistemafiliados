@@ -263,6 +263,12 @@ def main() -> None:
                         if v_clean in in_lower and v_clean not in out_lower:
                             primary = product_query
                             break
+                    # Preservar categoria (ex.: "fone redmi" não pode virar "redmi note").
+                    audio_intent = ["fone", "fones", "headphone", "earphone", "earbuds", "headset", "airpods", "buds"]
+                    smartphone_hijack = ["redmi note", "galaxy", "iphone", "celular", "smartphone"]
+                    if any(t in in_lower for t in audio_intent):
+                        if not any(t in out_lower for t in audio_intent) and any(t in out_lower for t in smartphone_hijack):
+                            primary = product_query
                     product_query = primary
                     # Aplica normalização aprendida; não remover variante (mini/pro/...) que o usuário digitou.
                     try:

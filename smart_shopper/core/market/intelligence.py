@@ -75,6 +75,13 @@ _CATEGORY_MARKERS: dict[str, list[str]] = {
 
 def detect_category(query: str) -> Optional[str]:
     q = _norm(query)
+    # Marcadores de tipo (ex.: "fone") devem ter prioridade sobre marca (ex.: "redmi"),
+    # para evitar classificar "fone redmi" como smartphone.
+    audio_intent = {"fone", "fones", "headphone", "earphone", "earbuds", "headset", "airpods", "buds"}
+    q_tokens = set(re.findall(r"[a-z]+|[0-9]+", q))
+    if q_tokens & audio_intent:
+        return "audio"
+
     for category, markers in _CATEGORY_MARKERS.items():
         if any(m in q for m in markers):
             return category

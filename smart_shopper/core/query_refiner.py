@@ -82,7 +82,8 @@ def refine_with_llm(query: str, router: Optional[LLMRouter]) -> QueryRefineResul
         "{\"primary\": \"...\", \"alternatives\": [\"...\", \"...\", \"...\"]}\n"
         "Regras: retorne SOMENTE o JSON (sem markdown, sem texto extra). "
         "NÃO altere o nome do modelo: se o usuário escreveu A1, mantenha A1 (não troque por A1 Mini). "
-        "Se escreveu A1 Mini, mantenha A1 Mini. Não adicione Mini, Pro, Max etc. se o termo não tiver."
+        "Se escreveu A1 Mini, mantenha A1 Mini. Não adicione Mini, Pro, Max etc. se o termo não tiver. "
+        "NÃO troque a categoria do produto: se o termo contém 'fone/headphone/earbuds', não transforme em celular."
     )
 
     try:

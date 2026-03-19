@@ -135,6 +135,10 @@ def _find_best_entry(store: dict[str, Any], alias_norm: str) -> Optional[dict[st
 
     alias_tokens = _tokens(alias_norm)
 
+    # Se a query indica fortemente a categoria (ex.: "fone"), não normalize para entrada de outra categoria.
+    AUDIO_INTENT = {"fone", "fones", "headphone", "earphone", "earbuds", "headset", "airpods", "buds"}
+    query_audio = bool(alias_tokens & AUDIO_INTENT)
+
     # 1) Match exato do alias normalizado
     for e in entries:
         if e.get("alias_norm") == alias_norm:
@@ -152,6 +156,9 @@ def _find_best_entry(store: dict[str, Any], alias_norm: str) -> Optional[dict[st
         if not a:
             continue
         tokens_e = set(e.get("tokens") or []) if isinstance(e.get("tokens"), list) else _tokens(a)
+        entry_audio = bool(tokens_e & AUDIO_INTENT)
+        if query_audio and not entry_audio:
+            continue
         entry_specific = tokens_e & MODEL_SPECIFIC
         # Se a query tem variante (ex: mini) e a entrada não, não usar essa entrada.
         if query_specific and not entry_specific:
