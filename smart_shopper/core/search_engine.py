@@ -7,7 +7,7 @@ from typing import Iterable, Optional
 # O SerpApi é usado apenas para preços ao vivo.
 try:
     from serpapi import GoogleSearch  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
+except ImportError:  # pragma: no cover
     GoogleSearch = None  # type: ignore[assignment]
 
 
