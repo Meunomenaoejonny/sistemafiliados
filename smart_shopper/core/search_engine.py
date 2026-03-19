@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from serpapi import GoogleSearch
+# Import lazy: o app precisa iniciar mesmo sem `serpapi` no ambiente.
+# O SerpApi é usado apenas para preços ao vivo.
+try:
+    from serpapi import GoogleSearch  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    GoogleSearch = None  # type: ignore[assignment]
 
 
 TRUSTED_STORES = {
@@ -74,6 +79,10 @@ class SearchEngine:
             raise ValueError("Consulta vazia.")
 
         if not self._key:
+            return self._search_free_fallback(query, max_results=max_results)
+
+        if GoogleSearch is None:
+            # Se as chaves/serpapi não estiverem instalados, caímos para o modo gratuito.
             return self._search_free_fallback(query, max_results=max_results)
 
         params = {
