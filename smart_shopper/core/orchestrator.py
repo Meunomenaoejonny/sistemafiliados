@@ -64,6 +64,7 @@ class Orchestrator:
                     "value_score": r.value_score,
                     "why_this": r.why_this,
                     "potential_savings_label": r.potential_savings_label,
+                    "result_origin": "live",
                 }
             )
             cards.append(
@@ -219,6 +220,7 @@ class Orchestrator:
                                 "value_score": picked.value_score,
                                 "why_this": f"Busca direcionada para {s['label']}. {picked.why_this}",
                                 "potential_savings_label": picked.potential_savings_label,
+                                "result_origin": "probe",
                             }
                         )
                         live_card = OfferCard(
@@ -272,6 +274,7 @@ class Orchestrator:
                     "potential_savings_label": None,
                     "rating": None,
                     "reviews_count": None,
+                    "result_origin": "estimated",
                 },
             )
             results.append(

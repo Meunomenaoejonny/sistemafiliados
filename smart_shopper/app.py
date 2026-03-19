@@ -429,6 +429,13 @@ def main() -> None:
                             st.metric("Preço estimado", price_value)
                         st.caption("Sem preço ao vivo (modo gratuito).")
                     meta = best.metadata or {}
+                    origin = str(meta.get("result_origin") or ("live" if best.is_live_price else "estimated"))
+                    if origin == "live":
+                        st.caption("🟢 LIVE")
+                    elif origin == "probe":
+                        st.caption("🟡 PROBE")
+                    else:
+                        st.caption("⚪ ESTIMADO")
                     rating = meta.get("rating")
                     reviews_count = meta.get("reviews_count")
                     if rating is not None:
@@ -478,6 +485,14 @@ def main() -> None:
                             st.caption(title_short)
 
                             # Preço
+                            origin = str(meta.get("result_origin") or ("live" if card.is_live_price else "estimated"))
+                            if origin == "live":
+                                st.caption("🟢 LIVE")
+                            elif origin == "probe":
+                                st.caption("🟡 PROBE")
+                            else:
+                                st.caption("⚪ ESTIMADO")
+
                             if card.is_live_price:
                                 price_value = _format_price(card.price, card.currency) or card.price_label
                                 if price_value:
