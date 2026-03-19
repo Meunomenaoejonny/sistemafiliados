@@ -1,0 +1,26 @@
+# Secrets e chaves (nunca commitar)
+.streamlit/secrets.toml
+*.env
+.env.*
+
+# Aprendizado local (recriado na nuvem)
+smart_shopper/.data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
