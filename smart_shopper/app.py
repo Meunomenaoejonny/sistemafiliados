@@ -15,7 +15,7 @@ if _app_dir not in sys.path:
 
 import streamlit as st
 
-from core.affiliate_manager import AffiliateConfig, has_affiliate
+from core.affiliate_manager import AffiliateConfig
 from core.orchestrator import OrchestratorError
 from core.analysis.product_analysis import build_product_analysis_result
 from core.orchestrator_factory import build_orchestrator
