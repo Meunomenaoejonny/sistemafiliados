@@ -122,6 +122,8 @@ def main() -> None:
     st.session_state.setdefault("learned_query_normalized", None)
     st.session_state.setdefault("refiner_input", None)
     st.session_state.setdefault("platform_results", None)
+    st.session_state.setdefault("live_mode", False)
+    st.session_state.setdefault("serpapi_module_available", None)
 
     # Limpar cache e campo: zera caches; o campo é limpo no próximo rerun (antes do widget ser criado).
     if clear_cache_clicked:
@@ -153,6 +155,11 @@ def main() -> None:
 
     st.session_state["vision_gemini_present"] = bool(gemini_key and gemini_key.strip())
     st.session_state["vision_hf_present"] = bool(hf_token and hf_token.strip())
+    try:
+        from serpapi import GoogleSearch as _SerpApiGoogleSearch  # type: ignore # noqa: F401
+        st.session_state["serpapi_module_available"] = True
+    except Exception:
+        st.session_state["serpapi_module_available"] = False
 
     affiliate_cfg = AffiliateConfig(
         aliexpress_app_key=_safe_get_secret("ALIEXPRESS_APP_KEY"),
@@ -186,6 +193,7 @@ def main() -> None:
             orchestrator = build_result.orchestrator
             vision_backend = build_result.vision_backend
             live_mode = build_result.live_mode
+            st.session_state["live_mode"] = bool(live_mode)
         except Exception as e:  # noqa: BLE001
             st.error(str(e))
             st.session_state["last_technical_error"] = str(e)
@@ -521,6 +529,9 @@ def main() -> None:
                 "analysis_provider": st.session_state.get("analysis_provider"),
                 "vision_gemini_present": st.session_state.get("vision_gemini_present"),
                 "vision_hf_present": st.session_state.get("vision_hf_present"),
+                "serpapi_key_present": bool(serpapi_key and serpapi_key.strip()),
+                "serpapi_module_available": st.session_state.get("serpapi_module_available"),
+                "live_mode": st.session_state.get("live_mode"),
                 "vision_image_present": st.session_state.get("vision_image_present"),
                 "vision_backend_used": st.session_state.get("vision_backend_used"),
                 "last_technical_error": st.session_state.get("last_technical_error"),
