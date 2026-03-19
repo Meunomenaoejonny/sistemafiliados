@@ -287,7 +287,15 @@ def main() -> None:
                             drop_variant = any(
                                 v in q_lower and v not in norm_lower for v in variants
                             )
-                            if not drop_variant:
+                            # Preservar categoria de áudio: evita "fone redmi" -> "redmi note".
+                            audio_intent = ["fone", "fones", "headphone", "earphone", "earbuds", "headset", "airpods", "buds"]
+                            smartphone_hijack = ["redmi note", "galaxy", "iphone", "celular", "smartphone"]
+                            drop_category = any(t in q_lower for t in audio_intent) and (
+                                not any(t in norm_lower for t in audio_intent)
+                                and any(t in norm_lower for t in smartphone_hijack)
+                            )
+
+                            if not drop_variant and not drop_category:
                                 product_query = learned_norm
                                 st.session_state["learned_query_normalized"] = True
                             else:

@@ -89,7 +89,8 @@ class Orchestrator:
           1) preço crescente (quando disponível)
           2) value_score (desempate)
         """
-        from core.affiliate_manager import ALL_STORES
+        from core.affiliate_manager import ALL_STORES, store_search_url
+        from core.market.price_estimator import estimate_brl_range, brl_label
 
         offers = self._search.search(query, max_results=max_results)
         ranked = rank_offers(offers)
@@ -173,6 +174,49 @@ class Orchestrator:
                     has_affiliate=aff,
                     value_score=vs,
                     rank_price=p,
+                )
+            )
+
+        # Completar plataformas faltantes com fallback por loja (estimativa),
+        # para sempre mostrar "1 card por plataforma" no dashboard.
+        low, high = estimate_brl_range(query)
+        fallback_label = brl_label(low, high)
+        existing_keys = {r.store_key for r in results}
+        for s in ALL_STORES:
+            sk = s["key"]
+            if sk in existing_keys:
+                continue
+            url = store_search_url(sk, query)
+            if not url:
+                continue
+            aff_url = to_affiliate_link(url, s["label"], self._affiliate_cfg)
+            fallback_card = OfferCard(
+                title=query.strip(),
+                store=s["label"],
+                affiliate_link=aff_url,
+                thumbnail=None,
+                original_link=url,
+                price=None,
+                currency="BRL",
+                price_label=fallback_label,
+                is_live_price=False,
+                metadata={
+                    "value_score": 0.0,
+                    "why_this": "Fallback por plataforma (sem preço ao vivo nesta loja para esta busca).",
+                    "potential_savings_label": None,
+                    "rating": None,
+                    "reviews_count": None,
+                },
+            )
+            results.append(
+                PlatformResult(
+                    store_key=sk,
+                    store_label=s["label"],
+                    store_icon=s["icon"],
+                    card=fallback_card,
+                    has_affiliate=has_affiliate(self._affiliate_cfg, sk),
+                    value_score=0.0,
+                    rank_price=None,
                 )
             )
 
