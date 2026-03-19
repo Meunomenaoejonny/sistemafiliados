@@ -23,6 +23,20 @@ def _norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", (s or "").lower()).encode("ascii", "ignore").decode("ascii")
     return re.sub(r"[^a-z0-9 ]+", " ", s).strip()
 
+def _marker_in_query(q_norm: str, marker: str) -> bool:
+    """
+    Match robusto para marcador:
+    - marcador com espaço: exige substring exata (ex.: "redmi note")
+    - marcador de 1 token: exige token exato (evita "fila" casar com "filamento")
+    """
+    m = _norm(marker)
+    if not m:
+        return False
+    if " " in m:
+        return m in q_norm
+    q_tokens = set(re.findall(r"[a-z]+|[0-9]+", q_norm))
+    return m in q_tokens
+
 
 # ─── Detecção de categoria ────────────────────────────────────────────────────
 
@@ -83,7 +97,7 @@ def detect_category(query: str) -> Optional[str]:
         return "audio"
 
     for category, markers in _CATEGORY_MARKERS.items():
-        if any(m in q for m in markers):
+        if any(_marker_in_query(q, m) for m in markers):
             return category
     return None
 
@@ -106,7 +120,7 @@ def match_product(query: str) -> Optional[TopProduct]:
         score = 0
         for tag in product.tags:
             t = _norm(tag)
-            if t and t in q:
+            if t and _marker_in_query(q, t):
                 score += len(t.split())
         if score == 0:
             continue
