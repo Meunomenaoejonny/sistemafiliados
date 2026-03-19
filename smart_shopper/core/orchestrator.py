@@ -177,15 +177,81 @@ class Orchestrator:
                 )
             )
 
-        # Completar plataformas faltantes com fallback por loja (estimativa),
-        # para sempre mostrar "1 card por plataforma" no dashboard.
+        # Completar plataformas faltantes:
+        # 1) tenta busca direcionada por loja (modo live)
+        # 2) se não achar, usa fallback por loja (estimativa)
         low, high = estimate_brl_range(query)
         fallback_label = brl_label(low, high)
         existing_keys = {r.store_key for r in results}
+        has_live_any = any((r.card.is_live_price for r in results))
         for s in ALL_STORES:
             sk = s["key"]
             if sk in existing_keys:
                 continue
+            live_card: Optional[OfferCard] = None
+            live_score: float = 0.0
+            live_price: Optional[float] = None
+
+            # Busca direcionada só quando já estamos em modo live.
+            if has_live_any:
+                try:
+                    probe_query = f"{query} {s['label']}"
+                    probe_offers = self._search.search(probe_query, max_results=8)
+                    probe_ranked = rank_offers(probe_offers)
+                    # Tenta casar pela própria loja; se não tiver, usa o melhor da probe.
+                    picked = None
+                    picked_score = 0.0
+                    for pr in probe_ranked:
+                        if _store_key_from_name(pr.offer.store) == sk:
+                            picked = pr
+                            picked_score = pr.value_score
+                            break
+                    if picked is None and probe_ranked:
+                        picked = probe_ranked[0]
+                        picked_score = picked.value_score
+
+                    if picked is not None:
+                        o = picked.offer
+                        aff_link = to_affiliate_link(o.original_link, o.store, self._affiliate_cfg)
+                        m = asdict(o)
+                        m.update(
+                            {
+                                "value_score": picked.value_score,
+                                "why_this": f"Busca direcionada para {s['label']}. {picked.why_this}",
+                                "potential_savings_label": picked.potential_savings_label,
+                            }
+                        )
+                        live_card = OfferCard(
+                            title=o.title,
+                            store=s["label"],  # mostra a plataforma alvo no dashboard
+                            affiliate_link=aff_link,
+                            thumbnail=o.thumbnail,
+                            original_link=o.original_link,
+                            price=o.price,
+                            currency=o.currency,
+                            price_label=o.price_label,
+                            is_live_price=o.is_live_price,
+                            metadata=m,
+                        )
+                        live_score = picked_score
+                        live_price = float(o.price) if o.price is not None else None
+                except Exception:
+                    live_card = None
+
+            if live_card is not None:
+                results.append(
+                    PlatformResult(
+                        store_key=sk,
+                        store_label=s["label"],
+                        store_icon=s["icon"],
+                        card=live_card,
+                        has_affiliate=has_affiliate(self._affiliate_cfg, sk),
+                        value_score=live_score,
+                        rank_price=live_price,
+                    )
+                )
+                continue
+
             url = store_search_url(sk, query)
             if not url:
                 continue
