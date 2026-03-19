@@ -16,13 +16,14 @@ class OrchestratorError(RuntimeError):
 
 @dataclass
 class PlatformResult:
-    """Melhor oferta de uma plataforma específica."""
+    """Produto destaque (mais barato) de uma plataforma específica."""
     store_key: str        # ex: "aliexpress"
     store_label: str      # ex: "AliExpress"
     store_icon: str       # ex: "🛒"
     card: OfferCard
     has_affiliate: bool
     value_score: float
+    rank_price: Optional[float] = None
 
 
 class Orchestrator:
@@ -83,40 +84,86 @@ class Orchestrator:
 
     def search_by_platform(self, query: str, max_results: int = 20) -> list[PlatformResult]:
         """
-        Busca ofertas e retorna a MELHOR oferta de cada plataforma,
-        ordenado por: (1) tem afiliado, (2) value_score desc.
+        Busca ofertas e retorna o produto MAIS BARATO de cada plataforma.
+        Ordenação do ranking:
+          1) preço crescente (quando disponível)
+          2) value_score (desempate)
         """
         from core.affiliate_manager import ALL_STORES
 
-        all_cards = self.search_offers(query, max_results=max_results)
+        offers = self._search.search(query, max_results=max_results)
+        ranked = rank_offers(offers)
 
-        # Índice loja label → store_key e meta
-        store_meta: dict[str, dict] = {
-            s["label"].lower(): s for s in ALL_STORES
-        }
+        # Índice loja (key/label) para metadados e matching flexível.
+        store_meta_by_key: dict[str, dict] = {s["key"]: s for s in ALL_STORES}
 
-        # Agrupar por loja, guardar o de maior value_score
-        best_per_store: dict[str, OfferCard] = {}
-        for card in all_cards:
-            store_low = card.store.lower()
-            existing = best_per_store.get(store_low)
-            if existing is None:
-                best_per_store[store_low] = card
-            else:
-                new_score = (card.metadata or {}).get("value_score", 0.0)
-                old_score = (existing.metadata or {}).get("value_score", 0.0)
-                if new_score > old_score:
-                    best_per_store[store_low] = card
+        def _store_key_from_name(name: str) -> str:
+            n = (name or "").lower()
+            if "aliexpress" in n:
+                return "aliexpress"
+            if "mercado livre" in n or "mercadolivre" in n:
+                return "mercadolivre"
+            if "amazon" in n:
+                return "amazon"
+            if "shopee" in n:
+                return "shopee"
+            if "magalu" in n or "magazine luiza" in n:
+                return "magalu"
+            if "shein" in n:
+                return "shein"
+            if "kabum" in n or "ka bum" in n:
+                return "kabum"
+            if "americanas" in n:
+                return "americanas"
+            if "casas bahia" in n:
+                return "casasbahia"
+            return n.replace(" ", "")
+
+        # Agrupar por loja: manter o menor preço da plataforma.
+        # Se não houver preço, usar maior value_score como fallback.
+        best_by_store: dict[str, tuple[OfferCard, float, Optional[float]]] = {}
+        for r in ranked:
+            o = r.offer
+            store_key = _store_key_from_name(o.store)
+            affiliate_link = to_affiliate_link(o.original_link, o.store, self._affiliate_cfg)
+            meta = asdict(o)
+            meta.update(
+                {
+                    "value_score": r.value_score,
+                    "why_this": r.why_this,
+                    "potential_savings_label": r.potential_savings_label,
+                }
+            )
+            card = OfferCard(
+                title=o.title,
+                store=o.store,
+                affiliate_link=affiliate_link,
+                thumbnail=o.thumbnail,
+                original_link=o.original_link,
+                price=o.price,
+                currency=o.currency,
+                price_label=o.price_label,
+                is_live_price=o.is_live_price,
+                metadata=meta,
+            )
+            cur = best_by_store.get(store_key)
+            cur_price = float(o.price) if o.price is not None else None
+            if cur is None:
+                best_by_store[store_key] = (card, r.value_score, cur_price)
+                continue
+            old_card, old_score, old_price = cur
+            if cur_price is not None and (old_price is None or cur_price < old_price):
+                best_by_store[store_key] = (card, r.value_score, cur_price)
+            elif cur_price is None and old_price is None and r.value_score > old_score:
+                best_by_store[store_key] = (card, r.value_score, cur_price)
 
         # Montar resultados
         results: list[PlatformResult] = []
-        for store_low, card in best_per_store.items():
-            meta = store_meta.get(store_low, {})
-            store_key = meta.get("key", store_low.replace(" ", ""))
+        for store_key, (card, vs, p) in best_by_store.items():
+            meta = store_meta_by_key.get(store_key, {})
             store_label = meta.get("label", card.store)
             store_icon = meta.get("icon", "🛒")
             aff = has_affiliate(self._affiliate_cfg, store_key)
-            vs = float((card.metadata or {}).get("value_score", 0.0))
             results.append(
                 PlatformResult(
                     store_key=store_key,
@@ -125,9 +172,16 @@ class Orchestrator:
                     card=card,
                     has_affiliate=aff,
                     value_score=vs,
+                    rank_price=p,
                 )
             )
 
-        # Ordenar: afiliados primeiro, depois por value_score
-        results.sort(key=lambda r: (not r.has_affiliate, -r.value_score))
+        # Ranking por menor preço por plataforma; desempate por score.
+        results.sort(
+            key=lambda r: (
+                r.rank_price is None,
+                r.rank_price if r.rank_price is not None else 10**12,
+                -r.value_score,
+            )
+        )
         return results

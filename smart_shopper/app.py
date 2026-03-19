@@ -440,7 +440,7 @@ def main() -> None:
 
         # ── Resultado por plataforma ──────────────────────────────────────────
         st.divider()
-        st.subheader("📊 Resultados por plataforma")
+        st.subheader("📊 Ranking: produto mais barato por plataforma")
 
         if not platform_results:
             st.info("Nenhuma oferta encontrada. Tente outra pesquisa.")
@@ -449,12 +449,14 @@ def main() -> None:
             for i in range(0, len(platform_results), cols_per_row):
                 row = platform_results[i: i + cols_per_row]
                 row_cols = st.columns(len(row), vertical_alignment="top")
-                for col, pr in zip(row_cols, row):
+                for j, (col, pr) in enumerate(zip(row_cols, row), start=1):
+                    rank_pos = i + j
                     card = pr.card
                     meta = card.metadata or {}
                     with col:
                         with st.container(border=True, key=f"plat_{pr.store_key}"):
                             # Cabeçalho da plataforma
+                            st.caption(f"#{rank_pos} no ranking")
                             if pr.has_affiliate:
                                 st.markdown(f"**{pr.store_icon} {pr.store_label}** 🤝")
                             else:
