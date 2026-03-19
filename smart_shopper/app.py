@@ -155,6 +155,9 @@ def main() -> None:
     affiliate_cfg = AffiliateConfig(
         amazon_tag=_safe_get_secret("AMAZON_TAG"),
         aliexpress_admitad_campaign_code=_safe_get_secret("ALIEXPRESS_ADMITAD_CAMPAIGN_CODE"),
+        aliexpress_app_key=_safe_get_secret("ALIEXPRESS_APP_KEY"),
+        aliexpress_app_secret=_safe_get_secret("ALIEXPRESS_APP_SECRET"),
+        aliexpress_tracking_id=_safe_get_secret("ALIEXPRESS_TRACKING_ID"),
     )
 
     orchestrator = None
