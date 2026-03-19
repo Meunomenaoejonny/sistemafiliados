@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, Optional
+import requests
 
 # Import lazy: o app precisa iniciar mesmo sem `serpapi` no ambiente.
 # O SerpApi é usado apenas para preços ao vivo.
@@ -81,10 +82,6 @@ class SearchEngine:
         if not self._key:
             return self._search_free_fallback(query, max_results=max_results)
 
-        if GoogleSearch is None:
-            # Se as chaves/serpapi não estiverem instalados, caímos para o modo gratuito.
-            return self._search_free_fallback(query, max_results=max_results)
-
         # Busca "profunda": pedir mais resultados do que vamos exibir,
         # para conseguir ranquear melhor custo-benefício.
         desired = max(10, int(max_results or 3))
@@ -100,7 +97,13 @@ class SearchEngine:
         }
 
         try:
-            data = GoogleSearch(params).get_dict()
+            if GoogleSearch is not None:
+                data = GoogleSearch(params).get_dict()
+            else:
+                # Fallback HTTP direto: funciona mesmo sem pacote `serpapi` instalado.
+                resp = requests.get("https://serpapi.com/search.json", params=params, timeout=20)
+                resp.raise_for_status()
+                data = resp.json()
         except Exception as e:  # noqa: BLE001
             raise SearchEngineError(
                 "Falha ao buscar preços em tempo real. Tente novamente."

@@ -20,16 +20,8 @@ def build_search_provider(
     - False quando usamos fallback 100% gratuito
     """
 
-    key_present = bool((serpapi_key or "").strip())
-    serpapi_available = False
-    if key_present:
-        try:
-            from serpapi import GoogleSearch  # type: ignore # noqa: F401
-            serpapi_available = True
-        except Exception:
-            serpapi_available = False
-
-    live_mode = key_present and serpapi_available
+    # Live mode depende da chave; o engine faz fallback HTTP se módulo não existir.
+    live_mode = bool((serpapi_key or "").strip())
     provider = SerpApiSearchProvider(serpapi_key=(serpapi_key or "").strip(), gl=gl, hl=hl)
     return provider, live_mode
 
